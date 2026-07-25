@@ -1,0 +1,45 @@
+#now we are creating a graph
+#and the first thing you create is a state
+
+import os
+from typing import TypedDict
+
+# 1) typed DICT
+class State(TypedDict):
+    topic: str
+    summary: str
+    score: str
+    
+# 2) pydantic approach
+#it is a good at data validation and type checking at runtime
+
+from pydantic import BaseModel,field_validator
+
+class State(BaseModel):
+    topic: str
+    score: int
+    summary: str= ""
+    
+    @field_validator
+    def score_positive(cls,v):
+        if v< 0:
+            raise ValueError("Score must be positive")
+        
+
+#python data classes 
+#standard pyhton dataclasss but it is used very rarelty
+from dataclasses import dataclass, field
+
+@dataclass
+class State:
+    topic: str
+    summary: str= ""
+    messages: list= field(default_factory=list)
+
+from langgraph.graph import MessagesState
+
+class State(MessagesState):
+    #messages field is already included with add_messages reducer
+    #just add your extra fields
+    user_name: str
+    language: str
