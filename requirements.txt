@@ -4,3 +4,9 @@ langchain-groq
 langchain-mistralai
 
 python-dotenv
+
+langchain-community
+langchain-text-splitters
+sentence-transformers
+faiss-cpu
+pypdf 
