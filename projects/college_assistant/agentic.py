@@ -1,45 +1,22 @@
-from langchain_mistralai import ChatMistralAI,MistralAIEmbeddings
-from langgraph.graph import StateGraph,START,END
-from typing import TypedDict, Annotated
 from dotenv import load_dotenv
+from langchain_mistralai import ChatMistralAI
+from typing import TypedDict,Annotated
+from langgraph.graph import StateGraph,START,END
 from langgraph.graph.message import add_messages
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from pathlib import Path
+
+from db import load_context,acedemic_retriever,fee_retriever
 
 load_dotenv()
 
-#Step 1 - Building the RAG retrievers 
-embedding_model= MistralAIEmbeddings(model='mistral-embed')
 llm= ChatMistralAI(model='mistral-large-latest',temperature=0.4)
-
-def build_retriever(pdf_path: str):
-    loader= PyPDFLoader(pdf_path)
-    document= loader.load()
-    
-    splitter= RecursiveCharacterTextSplitter(
-        chunk_size= 800,
-        chunk_overlap= 100
-    )
-    
-    chunks= splitter.split_documents(document)
-    
-    vectorStore= FAISS.from_documents(chunks,embedding_model)
-    
-    return vectorStore.as_retriever(search_kwargs= {"k":4})
-
-acedemic_retriever= build_retriever(Path(__file__).parent/"academics_handbook.pdf")
-fee_retriever= build_retriever(Path(__file__).parent/"fee_structure.pdf")
-
-#step2- State
+#step 1- State
 class State(TypedDict):
     programme: str
     messages: Annotated[list,add_messages]
     query_type: str
     retrievered_context: str
-    
-#step 3- Nodes generation
+
+#step 2- Nodes generation
 def classifier_node(state: State) -> dict:
     """Look at the latest user message and decide which path to take."""
     
@@ -72,15 +49,13 @@ def classifier_node(state: State) -> dict:
 def academic_rag_node(state: State) -> dict:
     """Retrieves relevant chunks from the academics handbook."""
     query= state['messages'][-1].content
-    docs= acedemic_retriever.invoke(query)
-    context= "\n\n".join([doc.page_content for doc in docs])
+    context= load_context(acedemic_retriever,query)
     return {'retrievered_context': context}
 
 def fee_rag_node(state: State) -> dict:
     """Retrieves relevant chunks from the fee structure PDF."""
     query = state["messages"][-1].content
-    docs = fee_retriever.invoke(query)
-    context = "\n\n".join([doc.page_content for doc in docs])
+    context = load_context(fee_retriever,query)
     return {"retrievered_context": context}
 
 def general_node(state: State) -> dict:
@@ -112,7 +87,7 @@ def response_node(state: State) -> dict:
     response = llm.invoke(prompt)
     return {"messages": [("assistant", response.content.strip())]}
 
-#step 4- router function
+
 def router_query(state: State):
     if state['query_type']== 'academic':
         return 'academic_rag'
@@ -139,32 +114,3 @@ graph.add_edge("general","response")
 graph.add_edge("response",END)
 
 app= graph.compile()
-
-#step 6- Run the code
-
-print("Welcome to the College assistant \n\n")
-print("which programe are you in ")
-print("1. BCA")
-print("2. BBA")
-print("3. B.com (H)")
-
-choice= input("\nEnter 1,2 or 3: ")
-programme_map= {
-    "1": "BCA",
-    "2": "BBA",
-    "3": "B.Com (H)"
-}
-student_programme = programme_map.get(choice, "BCA")
-print(f"\nGreat! You're set as a {student_programme} student.")
-
-while True:
-    user_query= input("You: ")
-    if user_query.lower() in ['exit','quit']:
-        break
-    
-    result= app.invoke({
-        'programme': student_programme,
-        'messages': [("user",user_query)]
-    })
-    
-    print(f"Assistant : {result['messages'][-1].content}")
